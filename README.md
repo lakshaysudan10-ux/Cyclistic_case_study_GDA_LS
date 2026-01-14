@@ -57,6 +57,7 @@ The table contains useful information about the dates, times, durations, locatio
 
 # PROCESS  
 I am using R to process, clean and analyze the data, and Tableau for visualization. 
+
 ```{R}
 #loading packages 
 library(tidyverse)
@@ -67,12 +68,12 @@ library(conflicted)
 conflict_prefer("filter", "dplyr")
 conflict_prefer("lag", "dplyr")
 
-# Step 1 - Collecting Data from the two .csv files uploaded from the data source
+## Collecting Data from the two .csv files uploaded from the data source, then combining them into one single file.  
 
 q1_2019 <- read_csv("Divvy_Trips_2019_Q1.csv")
 q1_2020 <- read_csv("Divvy_Trips_2020_Q1.csv")
 
-#compare Column names for each dataset and then, combining the two based on the 2020 Q1 
+#compare Column names for each dataset and then, combine the two based on the 2020 Q1 
 colnames(q1_2019)
 colnames(q1_2020)
 
@@ -87,51 +88,111 @@ colnames(q1_2020)
                    ,end_station_id = to_station_id
                    ,member_casual = usertype
                    ))
+#inspect and convert ride_id and rideable_type character to be able to stack correctly
+str(q1_2019)
+str(q1_2020)
+
+q1_2019 <-  mutate(q1_2019, ride_id = as.character(ride_id)
+                   ,rideable_type = as.character(rideable_type))
+
+#removed 2019 columns that were not required as part of the dataset merged
+
+all_trips <- all_trips %>%  
+  select(-c(start_lat, start_lng, end_lat, end_lng, birthyear, gender,  "tripduration"))
+
+#inspect the new dataset
+
+colnames(all_trips)
+nrow(all_trips
+dim(all_trips)
+head(all_trips)
+str(all_trips)
+summary(all_trips)
+
+#fixing 4 values of riders to only two for the type of members.
+
+table(all_trips$member_casual)
+
+all_trips <- all_trips %>%
+  mutate(member_casual = recode(member_casual
+                 ,"Subscriber" = "member"
+                 ,"Customer" = "casual"))  
+table(all_trips_member_casual)
+
+#adding new columns for each day, month, year, and day of the week.
+all_trips$date <- as.Date(all_trips$started_at)
+
+all_trips$month <- format(as.Date(all_trips$date), "%m")
+
+all_trips$day <- format(as.Date(all_trips$date), "%d")
+
+all_trips$year <- format(as.Date(all_trips$date), "%Y")
+
+all_trips$day_of_week <- format(as.Date(all_trips$date), "%A")
+
+#added a ride_length column
+all_trips$ride_length <- difftime(all_trips$ended_at,all_trips$started_at)
+str(all_trips)
+#removing the negative trip lengths that were caused by bikes taken off the stations for quality assurance.
+#also created a second new dataset to keep the original rows and columns untouched.
+
+all_trips_v2 <- all_trips[!(all_trips$start_station_name == "HQ QR" | all_trips$ride_length<0),]
+
+#Analysis on column ride_length
+summary(all_trips_v2$ride_length)
+## Aggregate your data so it’s useful and accessible.
+#comparing members and casual users 
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = mean)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = median)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = max)
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual, FUN = min)
+
+# calculating average ride time by day of the week, members vs casuals
+
+aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual + all_trips_v2$day_of_week, FUN = mean)
+
+#correcting the order for the week to start on Sunday
+all_trips_v2$day_of_week <- ordered(all_trips_v2$day_of_week, levels=c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
+
+## visualizing number_of_rides
+
+all_trips_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge")
+
+#Visualization for average duration
+
+all_trips_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n()
+            ,average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = average_duration, fill = member_casual)) +
+  geom_col(position = "dodge")
 
 
+#creating a counts table with aggregate data for the number of rides and average duration
 
-KEY Tasks 
-Check the data for errors.
-Choose your tools. 
-Transform the data so you can work with it effectively. 
-Document the cleaning process.
+counts <- aggregate(all_trips_v2$ride_length ~ all_trips_v2$member_casual + all_trips_v2$day_of_week, FUN = mean)
+
+#exporting summary file onto the desktop for further visualization
+write.csv(counts, file = 'avg_ride_length.csv')
+
+downloading the above file from R onto the desktop, then uploading
+```
  
+# Deliverable 
+Documentation of any cleaning or manipulation of data
 
-Deliverable 
-Documentation of any cleaning or manipulation of data -  
-A R script document containing a step-by-step process for data manipulation, organization, and calculations was maintained throughout the process.
-
-ANALYZE 
-
-Guiding Questions: 
-1. How should you organize your data to perform analysis on it? 
- The data had to be organized in standard column names that contain dates, trip duration, and the type of riders. Data was also rid of negative value rows that were due to the bikes being taken out of circulation for quality control. The member_casual column was consolidated for 2 answers: “members” and “casuals.”
-
-2. Has your data been properly formatted?
-  The data had some columns displaying character values instead of numerical values, which were omitted. A new ride_length column was added to calculate the exact ride length in seconds. 
-
-3. What surprises did you discover in the data? 
-The data was a surprise regarding member usage of Cyclistic and casual usage of Cyclistic. Members had more frequent but shorter trips compared to casual members, who had fewer trips and longer ride times.
-
-4. What trends or relationships did you find in the data? 
-  The relationship between riders, casual and members distinguished by the day of the week is partially due to members using Cyclistic for commuting to work and day-to-day tasks during the week; the number of rides is significantly higher for members. While casual members were more frequent on weekends and had 4 times as long rides compared to a member on any day of the week, this implies casual customers are taking long leisure rides and sightseeing in Chicago during the week and especially on the weekends.
-
-5. How will these insights help you answer your business questions? 
-These insights help to understand the user relationship with Cyclistic. The difference in usage will be key in understanding how the marketing team can target the casual riders to promote yearly memberships. 
-
-KEY TASKS 
-Aggregate your data so it’s useful and accessible. 
-Organize and format your data. 
-Perform Calculations. 
-Identify Trends and relationships 
-
-Deliverable 
-A summary of your analysis -
-
-The Summary concludes that there is a high demand for Cyclistic bikes from both Members and Casual riders, and the number of trips is very high throughout the week for annual members, the number of trips is 1/10th for casual riders, and they double in average duration, implying long rides for leisure and sightseeing through Chicago. On the weekend, however, the number of casual rides increases three times its weekly average and maintains a high average duration on Saturdays and Sundays. The annual members' rides decrease to about half their weekly rides, and a slight surge in average duration on Saturdays and Sundays. There is potential for Casual riders to convert into annual members, seeing their average duration and usage, it is definitely worth exploring for the marketing team. 
-
-
- member_casual weekday number_of_rides average_duration
+# ANALYZE 
+Aggregated data 
+member_casual  weekday   number_of_rides  average_duration
    <chr>         <ord>             <int> <drtn>          
  1 casual        Sun               18,652 5061.3044 secs  
  2 casual        Mon                5,591 4752.0504 secs  
@@ -148,10 +209,17 @@ The Summary concludes that there is a high demand for Cyclistic bikes from both 
 13 member        Fri              115,168  796.7338 secs  
 14 member        Sat               59,413  974.0730 secs 
 
+# Trends or relationships in the data 
+The relationship between riders, casual and members distinguished by the day of the week is partially due to members using Cyclistic for commuting to work and day-to-day tasks during the week; the number of rides is significantly higher for members. While casual members were more frequent on weekends and had 4 times as long rides compared to a member on any day of the week, this implies casual customers are taking long leisure rides and sightseeing in Chicago during the week and especially on the weekends. These insights help to understand the user relationship with Cyclistic. The difference in usage will be key in understanding how the marketing team can target the casual riders to promote yearly memberships. 
 
 
+# Deliverable 
+A summary of your analysis -
 
-SHARE phase 
+The Summary concludes that there is a high demand for Cyclistic bikes from both Members and Casual riders, and the number of trips is very high throughout the week for annual members, the number of trips is 1/10th for casual riders, and they double in average duration, implying long rides for leisure and sightseeing through Chicago. On the weekend, however, the number of casual rides increases three times its weekly average and maintains a high average duration on Saturdays and Sundays. The annual members' rides decrease to about half their weekly rides, and a slight surge in average duration on Saturdays and Sundays. There is potential for Casual riders to convert into annual members, seeing their average duration and usage, it is definitely worth exploring for the marketing team. 
+
+
+# SHARE 
 
 Guiding Questions: 
 1. Were you able to answer the questions of how annual members and casual riders use Cyclistic bikes?
@@ -162,8 +230,6 @@ Casual riders' data displays low trip counts and very high trip durations, contr
 
 3. How do your findings relate to your original question?
 The findings reveal that there is a way for casual members to be converted into members, which may be a monthly or even a weekend membership. 
-
-
 
 
 4. Who is your audience? What is the best way to communicate with them? 
@@ -184,9 +250,7 @@ Ensure your work is accessible.
 Deliverables
 Supporting visualizations and key findings 
 
-
-
-ACT 
+# ACT 
 
 Guiding Questions: 
 What is your conclusion based on your analysis? 
@@ -201,13 +265,6 @@ Practice presenting your case study to a family member or friend.
 
 Deliverables 
 Your top three recommendations based on your analysis
-
-
-
-
-
-
-
 
 
 Recommendations 
